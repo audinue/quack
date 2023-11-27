@@ -15,7 +15,6 @@ Bun.serve({
     if (url.pathname === "/quack.js") {
       const result = await Bun.build({
         entrypoints: ["./quack.ts"],
-        minify: true,
       });
       return new Response(result.outputs[0]);
     }

@@ -1,6 +1,21 @@
 class Binding {
-  constructor(public node: Node, public render: () => void) {}
+  constructor(public nodes: Node[], public render: () => void) {}
+
+  appendTo(node: any) {
+    this.nodes.forEach((n) => node.append(n));
+  }
+
+  beforeOf(node: any) {
+    this.nodes.forEach((n) => node.before(n));
+  }
+
+  remove() {
+    this.nodes.forEach((n: any) => n.remove());
+  }
 }
+
+let renderAll = (bindings: Binding[]) =>
+  bindings.forEach((binding) => binding.render());
 
 let PLACEHOLDER = "{0}";
 
@@ -11,7 +26,7 @@ let Placeholder = () => document.createTextNode("");
 let TextBinding = (evaluator: () => any) => {
   let node = Placeholder();
   let prev: any;
-  return new Binding(node, () => {
+  return new Binding([node], () => {
     let curr = evaluator();
     if (curr !== prev) {
       prev = curr;
@@ -27,7 +42,7 @@ let AttrBinding = (attr: Attr, tokens: string[], values: any[]) => {
     typeof value === "function" ? value : () => value;
   let evaluators = tail.map(() => normalize(values.shift()));
   let prev: any;
-  return new Binding(attr, () => {
+  return new Binding([attr], () => {
     let curr = tail.reduce(
       (string, token, index) => string + evaluators[index]() + token,
       head
@@ -53,7 +68,6 @@ let AttrBinding = (attr: Attr, tokens: string[], values: any[]) => {
 let TagBinding = (strings: TemplateStringsArray, ...values: any[]) => {
   let template = document.createElement("template");
   template.innerHTML = strings.join(PLACEHOLDER);
-  let node = template.content.children[0];
   let children: Binding[] = [];
   let init = (node: Node) => {
     if (node instanceof Text) {
@@ -65,11 +79,11 @@ let TagBinding = (strings: TemplateStringsArray, ...values: any[]) => {
           let value = values.shift();
           if (value instanceof Binding) {
             children.push(value);
-            frag.append(value.node);
+            value.appendTo(frag);
           } else if (typeof value === "function") {
             let child = TextBinding(value);
             children.push(child);
-            frag.append(child.node);
+            child.appendTo(frag);
           } else {
             frag.append(value);
           }
@@ -93,10 +107,14 @@ let TagBinding = (strings: TemplateStringsArray, ...values: any[]) => {
         }
       });
       [...node.childNodes].forEach(init);
+    } else if (node instanceof DocumentFragment) {
+      [...node.childNodes].forEach(init);
     }
   };
-  init(node);
-  return new Binding(node, () => children.forEach((child) => child.render()));
+  init(template.content);
+  return new Binding([...template.content.childNodes], () =>
+    renderAll(children)
+  );
 };
 
 let bindings: Binding[] = [];
@@ -110,8 +128,8 @@ let mount = (binding: Binding, container: Element | string) => {
         ? document.querySelector(container)
         : container;
     if (el) {
+      binding.appendTo(el);
       binding.render();
-      el.append(binding.node);
     }
   };
   if (document.readyState !== "interactive") {
@@ -123,16 +141,14 @@ let mount = (binding: Binding, container: Element | string) => {
 
 let render = () => {
   cancelAnimationFrame(request);
-  request = requestAnimationFrame(() =>
-    bindings.forEach((binding) => binding.render())
-  );
+  request = requestAnimationFrame(() => renderAll(bindings));
 };
 
 let MapBinding = <T>(array: () => T[], render: (el: T) => Binding) => {
   let prev: any[] = [];
   let children: Binding[] = [];
   let node = Placeholder();
-  return new Binding(node, () => {
+  return new Binding([node], () => {
     let prevLen = prev.length;
     let curr = array();
     let currLen = curr.length;
@@ -141,16 +157,16 @@ let MapBinding = <T>(array: () => T[], render: (el: T) => Binding) => {
       for (let i = prevLen; i < currLen; i++) {
         let child = render(curr[i]);
         children.push(child);
-        frag.append(child.node);
+        child.appendTo(frag);
       }
       node.before(frag);
     } else if (currLen < prevLen) {
       for (let i = currLen; i < prevLen; i++) {
-        (children[i].node as any).remove();
+        children[i].remove();
       }
       children.splice(currLen);
     }
-    children.forEach((child) => child.render());
+    renderAll(children);
     prev = curr;
   });
 };
@@ -162,14 +178,16 @@ let WhenBinding = (
 ) => {
   let prev: boolean;
   let node: any = Placeholder();
-  return new Binding(node, () => {
+  return new Binding([node], () => {
     let curr = condition();
     if (curr !== prev) {
       prev = curr;
       if (curr) {
-        node.replaceWith((node = ifTrue.node));
+        ifFalse.remove();
+        ifTrue.beforeOf(node);
       } else {
-        node.replaceWith((node = ifFalse.node));
+        ifTrue.remove();
+        ifFalse.beforeOf(node);
       }
     }
   });
