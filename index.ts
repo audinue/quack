@@ -1,47 +1,27 @@
 import { html, mount, map, when } from "./quack";
 
-let count = 100;
-let name = "John";
-
-const Greet = () => html`
-  <div>
-    <input value=${() => name} oninput=${(e: any) => (name = e.target.value)} />
-    <p>Hello ${() => name}!</p>
-  </div>
-`;
+let items: string[] = [];
 
 mount(
   html`
-    <div>
-      ${Greet()} ${Greet()} ${Greet()}
-      ${when(
-        () => count % 2 === 0,
-        html` <div>odd</div> `,
-        html` <div>even</div> `
+    <button onclick=${() => items.push("0")}>Add Item</button>
+    ${() => items.length}
+    ${map(
+      () => items,
+      (item, index) => html`
+        <input
+          value=${() => item()}
+          oninput=${(e: any) => (items[index()] = e.target.value)}
+        />
+        <button onclick=${() => items.splice(index(), 1)}></button>
+      `
+    )}
+    <ul>
+      ${map(
+        () => items,
+        (item) => html`<li>${() => item()}</li>`
       )}
-      <button onclick=${(e: any) => count++}>+</button>
-      <button onclick=${(e: any) => count--}>-</button>
-      <p>Count: ${() => count}</p>
-    </div>
-    <table border="1">
-      <tbody>
-        <template>
-          ${map(
-            () => [...Array(count).keys()],
-            (n) => html`
-              <tr>
-                <template>
-                  ${map(
-                    () => [...Array(8).keys()],
-                    (m) => html` <td>Item ${() => n} ${() => m}</td> `
-                  )}
-                </template>
-              </tr>
-            `
-          )}
-        </template>
-      </tbody>
-    </table>
+    </ul>
   `,
   "body"
 );

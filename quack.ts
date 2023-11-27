@@ -147,7 +147,10 @@ let render = () => {
   request = requestAnimationFrame(() => renderAll(bindings));
 };
 
-let MapBinding = <T>(array: () => T[], render: (el: T) => Binding) => {
+let MapBinding = <T>(
+  array: () => T[],
+  render: (el: () => T, i: () => number) => Binding
+) => {
   let prev: any[] = [];
   let children: Binding[] = [];
   let node = Placeholder();
@@ -158,7 +161,10 @@ let MapBinding = <T>(array: () => T[], render: (el: T) => Binding) => {
     if (prevLen < currLen) {
       let frag = Frag();
       for (let i = prevLen; i < currLen; i++) {
-        let child = render(curr[i]);
+        let child = render(
+          () => curr[i],
+          () => i
+        );
         children.push(child);
         child.appendTo(frag);
       }
@@ -170,7 +176,7 @@ let MapBinding = <T>(array: () => T[], render: (el: T) => Binding) => {
       children.splice(currLen);
     }
     renderAll(children);
-    prev = curr;
+    prev = curr.slice(0);
   });
 };
 
