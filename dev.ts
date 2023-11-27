@@ -1,3 +1,5 @@
+import { gzipSync } from "zlib";
+
 Bun.serve({
   port: 3000,
   async fetch(req) {
@@ -10,13 +12,26 @@ Bun.serve({
         entrypoints: ["./index.ts"],
         sourcemap: "inline",
       });
-      return new Response(result.outputs[0]);
+      const content = gzipSync(await result.outputs[0].text());
+      return new Response(content, {
+        headers: {
+          "Content-Encoding": "gzip",
+          "Content-Length": content.length as any as string,
+        },
+      });
     }
     if (url.pathname === "/quack.js") {
       const result = await Bun.build({
         entrypoints: ["./quack.ts"],
+        minify: true,
       });
-      return new Response(result.outputs[0]);
+      const content = gzipSync(await result.outputs[0].text());
+      return new Response(content, {
+        headers: {
+          "Content-Encoding": "gzip",
+          "Content-Length": content.length as any as string,
+        },
+      });
     }
     return new Response(null, {
       status: 404,
