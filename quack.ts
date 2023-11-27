@@ -91,6 +91,9 @@ let TagBinding = (strings: TemplateStringsArray, ...values: any[]) => {
         });
         node.replaceWith(frag);
       }
+    } else if (node instanceof HTMLTemplateElement) {
+      init(node.content);
+      node.replaceWith(node.content);
     } else if (node instanceof Element) {
       [...node.attributes].forEach((attr) => {
         let tokens = attr.value.split(PLACEHOLDER);
