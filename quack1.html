@@ -1,0 +1,291 @@
+<script src="https://unpkg.com/htm@3.1.1/dist/htm.js"></script>
+<script>
+  function Binding (el, render, ref) {
+    this.el = el
+    this.render = render
+    this.ref = ref
+  }
+
+  let bindings = []
+  let req
+
+  function render () {
+    cancelAnimationFrame(req)
+    req = requestAnimationFrame(function () {
+      for (let i = 0; i < bindings.length; i++) {
+        bindings[i].render()
+      }
+    })
+  }
+
+  function attr (el, name, value) {
+    if (
+         name === 'checked'
+      || name === 'disabled'
+      || name === 'selected'
+      || name === 'value'
+    ) {
+      el[name] = value
+    } else {
+      el.setAttribute(name, value)
+    }
+  }
+
+  function h (tag, props, ...children) {
+    let el = document.createElement(tag)
+    let bindings = []
+    for (let name in props) {
+      let value = props[name]
+      if (name.startsWith('on')) {
+        el[name] = function (e) {
+          value.call(this, e)
+          render()
+        }
+      } else if (typeof value === 'function') {
+        let curr
+        bindings.push(
+          new Binding(null, () => {
+            let next = value()
+            if (curr !== next) {
+              curr = next
+              attr(el, name, next)
+            }
+          })
+        )
+      } else {
+        attr(el, name, value)
+      }
+    }
+    for (let i = 0; i < children.length; i++) {
+      let child = children[i]
+      if (child instanceof Binding) {
+        bindings.push(child)
+        el.append(child.el)
+      } else if (typeof child === 'function') {
+        let placeholder = document.createTextNode('')
+        let curr
+        bindings.push(new Binding(null, () => {
+          let next = child()
+          if (curr !== next) {
+            curr = next
+            placeholder.data = next
+          }
+        }))
+        el.append(placeholder)
+      } else {
+        el.append(child)
+      }
+    }
+    return new Binding(el, () => {
+      for (let i = 0; i < bindings.length; i++) {
+        bindings[i].render()
+      }
+    })
+  }
+
+  function mount (binding, container) {
+    bindings.push(binding)
+    function init () {
+      let el = typeof container === 'string'
+        ? document.querySelector(container)
+        : container
+      binding.render()
+      el.append(binding.el)
+    }
+    if (document.readyState !== 'interactive') {
+      addEventListener('DOMContentLoaded', init)
+    } else {
+      init()
+    }
+  }
+
+  function For (array, callback) {
+    let curr = []
+    let bindings = []
+    let placeholder = document.createTextNode('')
+    return new Binding(placeholder, () => {
+      let next = array()
+      if (curr !== next) {
+        let currLen = curr.length
+        let nextLen = next.length
+        if (currLen < nextLen) {
+          for (let i = currLen; i < nextLen; i++) {
+            let ref = { value: next[i], index: i }
+            let binding = callback(() => ref.value, () => ref.index)
+            binding.ref = ref
+            bindings.push(binding)
+            placeholder.before(binding.el)
+          }
+        } else if (nextLen < currLen) {
+          for (let i = nextLen; i < currLen; i++) {
+            bindings[i].el.remove()
+          }
+          bindings.splice(nextLen)
+        }
+        for (let i = 0; i < bindings.length; i++) {
+          bindings[i].ref.value = next[i]
+          bindings[i].ref.index = i
+          bindings[i].render()
+        }
+        curr = next.slice(0)
+      }
+    })
+  }
+
+  let Keyed = (array, key, callback) => {
+    let curr = []
+    let currKeys = []
+    let bindings = []
+    let placeholder = document.createTextNode('')
+    return new Binding(placeholder, () => {
+      let next = array()
+      if (curr !== next) {
+        let nextKeys = next.map(key)
+        for (let i = 0; i < nextKeys.length; i++) {
+          if (i < currKeys.length) {
+            if (currKeys[i] !== nextKeys[i]) {
+              let index = currKeys.indexOf(nextKeys[i])
+              if (index > -1) {
+                if (nextKeys.includes(currKeys[i])) {
+                  currKeys.splice(index, 1)
+                  currKeys.splice(i, 0, nextKeys[i])
+                  bindings[i].el.before(bindings[index].el)
+                  let binding = bindings[index]
+                  binding.ref.value = next[i]
+                  binding.ref.index = i
+                  binding.render()
+                  bindings.splice(index, 1)
+                  bindings.splice(i, 0, binding)
+                } else {
+                  currKeys.splice(i, 1)
+                  bindings[i].el.remove()
+                  bindings.splice(i, 1)
+                  i--
+                }
+              } else {
+                currKeys.splice(i, 0, nextKeys[i])
+                let ref = { value: next[i], index: i }
+                let binding = callback(() => ref.value, () => ref.index)
+                binding.ref = ref
+                binding.render()
+                bindings[i].el.before(binding.el)
+                bindings.splice(i, 0, binding)
+              }
+            }
+          } else {
+            currKeys.push(nextKeys[i])
+            let ref = { value: next[i], index: i }
+            let binding = callback(() => ref.value, () => ref.index)
+            binding.ref = ref
+            binding.render()
+            bindings.push(binding)
+            placeholder.before(binding.el)
+          }
+        }
+        let currLen = currKeys.length
+        let nextLen = nextKeys.length
+        for (let i = nextLen; i < currLen; i++) {
+          bindings[i].el.remove()
+        }
+        bindings.splice(nextLen)
+        curr = next.slice(0)
+      }
+    })
+  }
+
+  let html = htm.bind(h)
+
+  let name  = 'John'
+  let count = 10
+  let comp  = () => [...Array(count).keys()]
+  let array = comp()
+  let cols  = [...Array(7).keys()]
+
+  mount(
+    html`
+      <div>
+        <p>Name: <input value=${() => name} oninput=${e => name = e.target.value}/></p>
+        <p>Name: <input value=${() => name} oninput=${e => name = e.target.value}/></p>
+        <p>Name: <input value=${() => name} oninput=${e => name = e.target.value}/></p>
+        <p>Hello ${() => name}!</p>
+      </div>
+    `,
+    '#greet'
+  )
+
+  mount(
+    html`
+      <p>
+        <button onclick=${() => (count++, array = comp())}>+</button>
+        <button onclick=${() => (count--, array = comp())}>-</button>
+        Count: ${() => count}
+      </p>
+    `,
+    '#counter'
+  )
+
+  mount(
+    html`
+      <table border="1">
+        <tbody>
+          ${For(
+            () => array,
+            (n) => html`
+              <tr>
+                ${For(
+                  () => cols,
+                  (m) => html`
+                    <td>Item ${() => n()} ${() => m()}</td>
+                  `
+                )}
+              </tr>
+            `
+          )}
+        </tbody>
+      </table>
+    `,
+    '#table'
+  )
+
+  let products = [...Array(300).keys()].map(i => ({
+    id: i + 1,
+    name: `Product ${i + 1}`
+  }))
+
+  mount(
+    html`
+      <div>
+        <button onclick=${() => products = [...products.slice(0, 4), { id: crypto.randomUUID(), name: 'Apple' }, ...products.slice(4)]}>Insert at 5</button>
+        <button onclick=${() => (products = products.slice(0), products.reverse())}>Reverse</button>
+        <table border="1">
+          <tbody>
+            ${Keyed(
+              () => products,
+              (product) => product.id,
+              (product, index) => html`
+                <tr>
+                  <td>${() => product().id}</td>
+                  <td>${() => product().name}</td>
+                  <td>
+                    <button onclick=${e => {
+                      products = products.filter(p => p !== product())
+                    }}>Remove</button>
+                  </td>
+                </tr>
+              `
+            )}
+          </tbody>
+        </table>
+      </div>
+    `,
+    '#products'
+  )
+</script>
+
+<div id="greet"></div>
+
+<div id="counter"></div>
+
+<div id="table"></div>
+
+<div id="products"></div>
